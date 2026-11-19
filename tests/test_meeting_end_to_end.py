@@ -19,7 +19,7 @@ def test_limited_release_processes_new_line_commands_and_skips_file_checks(monke
     monkeypatch.setenv("LOCAL_NAS_ROOT", str(tmp_path / "nas"))
     monkeypatch.setattr(main, "nas", LocalNas())
     monkeypatch.setattr(main, "settings", replace(
-        main.settings, orchestrator="n8n", internal_meeting_jobs=True, submission_checks_enabled=False,
+        main.settings, orchestrator="python", internal_meeting_jobs=True, submission_checks_enabled=False,
     ))
     start = datetime.now(main.settings.timezone) + timedelta(minutes=5)
     replies, pushes = [], []

@@ -53,7 +53,8 @@ services:
       - .env
     environment:
       ORCHESTRATOR: n8n
-      N8N_INTAKE_URL: http://n8n:5678/webhook/line-meeting-intake
+      INTERNAL_MEETING_JOBS: "false"
+      N8N_INTAKE_URL: http://n8n:5678/webhook/line-meeting-intake-v3
       CORE_API_KEY: ${CORE_API_KEY}
       DB_PATH: /app/data/meetings.db
       BROWSER_PROFILE_PATH: /app/data/dsm-browser-profile

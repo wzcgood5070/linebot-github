@@ -1,53 +1,24 @@
-# LINE 會議自動化
+# LINE Bot：n8n 主導版 v3
 
-FastAPI、SQLite、n8n、Playwright DSM 與 GPT 判讀的原始碼快照。
-架構、流程、元件角色、擴充與維護方式見 [現階段系統報告](docs/現階段系統報告.md)。
+n8n 負責指令流程、排程觸發、五種作業分流、失敗分支及通知補送。Python 提供單項功能 API，SQLite 保存業務狀態，PostgreSQL 保存 n8n 流程紀錄，NAS 保存上傳檔案。
 
-## 開發與測試
+本版本 **40 項本機測試通過，尚未部署正式環境**。真實 n8n 匯入／發布、Synology NAS 與 GPT 整合仍需驗收；正式名單保留空白，進度檢查維持停用。
 
-```powershell
-Copy-Item .env.example .env
-# 編輯 .env，填入自己的服務設定
-docker build -t linebot-dev:local .
-docker run --rm --entrypoint python linebot-dev:local -m pytest -q
-docker compose up -d --build
-```
+## 使用與維護
 
-新助理會議由 `INTERNAL_MEETING_JOBS=true` 在核心服務內排程。
-目前 `MEETING_SUBMISSION_CHECKS_ENABLED=false`，繳交與 GPT 功能待驗收後啟用。
-公開 HTTPS Tunnel 應轉送至本機 8000 埠的 `/line/webhook`。
-初次啟動前需設定 LINE、NAS、n8n、PostgreSQL 與 CORE_API_KEY，並完成 DSM 專用瀏覽器登入。
-
-## 更新既有部署
-
-以 PowerShell 7 執行，ProjectPath 指向既有 compose.yaml 與 .env 所在目錄。
+詳細節點、API、架構分工及切換順序見 [n8n/README.md](n8n/README.md)。此包不含 .env、金鑰、登入設定檔、正式資料庫或上傳檔案。
 
 ```powershell
-./scripts/update-linebot.ps1 -ProjectPath 'C:\path\to\existing-linebot'
+docker build -t linebot-n8n-v3:test .
+docker run --rm --entrypoint python linebot-n8n-v3:test -m pytest -q
 ```
 
-腳本會測試新映像、備份 SQLite、保存舊映像，再更新 linebot。
-產生的實際部署覆寫檔位於 `work/linebot-release/compose.release.yaml`。
-後續維護需同時指定原 Compose 與覆寫檔，並保留原專案名稱與 volumes。
-
-## 診斷工具
-
-`scripts/diagnostics` 收錄 DSM 視窗診斷與指定檔下載測試。
-容器需掛載原 `/app/data/dsm-browser-profile`。
-視窗診斷另需將本儲存庫 `app` 掛到 `/tmp/nas-source`，輸出目錄掛到 `/tmp/diagnostics`。
-下載測試的 FOLDER、FILENAME 和父路徑已改為範例，執行前請指定核准的測試檔案。
-
-## GitHub 提交
+發布到既有專案前，先備份 n8n 工作流程／Credentials／PostgreSQL 及 Python 資料。匯入並發布 `n8n/workflows/line-meeting-orchestration.json`，再執行：
 
 ```powershell
-git init
-git add .
-git diff --cached --stat
-git commit -m "Add LINE meeting automation and progress report"
-git branch -M main
-git remote add origin https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git
-git push -u origin main
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-linebot.ps1 -ProjectPath '既有專案的完整路徑'
 ```
 
-請將 URL 換成自己的空白儲存庫。實際 .env、資料庫、瀏覽器登入資料、NAS 檔案和備份保存在部署環境。
-本交付未替使用者選擇公開授權條款。
+腳本會先確認 v3 n8n readiness，接著建置、跑測試、備份 SQLite、保留舊映像，再切換 Bot。失敗時恢復舊映像與原本路由設定。此腳本本次僅通過語法檢查，尚未在正式 Docker 執行。
+
+GitHub 可直接建立儲存庫後加入本目錄內容。請勿將正式 .env、Credentials 匯出檔、資料庫或 DSM profile 加入 Git。尚未上傳 GitHub。

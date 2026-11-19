@@ -19,7 +19,7 @@ class Settings:
     internal_meeting_jobs: bool = field(default_factory=lambda: os.getenv("INTERNAL_MEETING_JOBS", "").lower() == "true")
     submission_checks_enabled: bool = field(default_factory=lambda: os.getenv("MEETING_SUBMISSION_CHECKS_ENABLED", "true").lower() == "true")
     n8n_intake_url: str = field(
-        default_factory=lambda: os.getenv("N8N_INTAKE_URL", "http://n8n:5678/webhook/line-meeting-intake")
+        default_factory=lambda: os.getenv("N8N_INTAKE_URL", "http://n8n:5678/webhook/line-meeting-intake-v3")
     )
     core_api_key: str = field(default_factory=lambda: os.getenv("CORE_API_KEY", "dev-core-key"))
 

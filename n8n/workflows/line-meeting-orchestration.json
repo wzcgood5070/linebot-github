@@ -1,10 +1,10 @@
 {
-  "name": "LINE Meeting NAS Orchestration v2",
+  "name": "LINE Meeting Orchestration v3 - n8n Controller",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "line-meeting-intake",
+        "path": "line-meeting-intake-v3",
         "responseMode": "onReceived",
         "options": {}
       },
@@ -16,12 +16,12 @@
         -900,
         -120
       ],
-      "webhookId": "line-meeting-intake"
+      "webhookId": "line-meeting-intake-v3"
     },
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "unified-meeting-intake",
+        "path": "unified-meeting-intake-v3",
         "responseMode": "onReceived",
         "options": {}
       },
@@ -33,7 +33,7 @@
         -900,
         100
       ],
-      "webhookId": "unified-meeting-intake"
+      "webhookId": "unified-meeting-intake-v3"
     },
     {
       "parameters": {
@@ -63,7 +63,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ event_id: $json.event_id, target_id: $json.target_id, target_type: $json.target_type, text: $json.text, received_at: $json.received_at }) }}",
+        "jsonBody": "={{ JSON.stringify($('Normalize Intake').item.json) }}",
         "options": {}
       },
       "id": "9da47996-aa56-4591-ae9d-19c3059dc773",
@@ -222,32 +222,6 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "http://linebot:8000/api/v1/meetings/jobs/run-due",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "X-Core-API-Key",
-              "value": "={{ $env.CORE_API_KEY }}"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 300000
-        }
-      },
-      "id": "23acaf52-41d6-4781-80cf-53faab7145a9",
-      "name": "Run Due Meeting Jobs",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -420,
-        440
-      ]
-    },
-    {
-      "parameters": {
         "jsCode": "return $('Prepare Meeting').first().json.schedule ? [] : $input.all();"
       },
       "id": "b6999faa-bfe4-45aa-a6bb-de1124704d3b",
@@ -258,6 +232,565 @@
         180,
         0
       ]
+    },
+    {
+      "id": "b2ac1905-486d-41ca-97e8-282ce41980cc",
+      "name": "Process Group Command",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/commands",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Normalize Intake').item.json) }}"
+      },
+      "position": [
+        -420,
+        -240
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "id": "f2ba3d70-adcf-422b-89a6-bca143c7bd90",
+      "name": "Command Handled?",
+      "type": "n8n-nodes-base.switch",
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.handled ? 0 : 1 }}"
+      },
+      "position": [
+        -170,
+        -240
+      ],
+      "typeVersion": 3.2
+    },
+    {
+      "id": "c61e3581-a090-4285-846e-b1b2b64091d1",
+      "name": "Only Nonempty Reply",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "return $input.all().filter(i => Boolean(i.json.reply));"
+      },
+      "position": [
+        60,
+        -320
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "897ba19c-be0c-44ac-948f-f7dc155c8939",
+      "name": "Reply to Command",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/line/reply",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({reply_token: $('Normalize Intake').item.json.reply_token, text: $json.reply}) }}"
+      },
+      "position": [
+        300,
+        -320
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "id": "a0bd5f78-3ddc-49f2-acc8-9ec4d2f0f221",
+      "name": "Claim Due Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/jobs/claim",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        }
+      },
+      "position": [
+        -420,
+        500
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "id": "5446e562-b2d5-4650-9ff1-5701e1dd4252",
+      "name": "Only Available Job",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "return $input.all().filter(i => i.json.available === true);"
+      },
+      "position": [
+        -180,
+        500
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "3992b425-f513-4874-ae18-90083fc4b6aa",
+      "name": "Route Meeting Operation",
+      "type": "n8n-nodes-base.switch",
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 6,
+        "output": "={{ Math.max(0, [\"create-upload\", \"upload-notice\", \"missing-reminder\", \"progress-check\", \"late-check\"].indexOf($json.operation_key) + 1) }}"
+      },
+      "position": [
+        60,
+        500
+      ],
+      "typeVersion": 3.2
+    },
+    {
+      "id": "ecb0b4ed-1fa7-45d7-a02a-eb048f76a42b",
+      "name": "Create Meeting Upload Link",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/jobs/execute/create-upload",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Claim Due Job').item.json.id, lease_until: $('Claim Due Job').item.json.lease_until }) }}"
+      },
+      "position": [
+        350,
+        300
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "9af1b8b3-a892-47a5-bb7d-67406457ae64",
+      "name": "Prepare Upload Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/jobs/execute/upload-notice",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Claim Due Job').item.json.id, lease_until: $('Claim Due Job').item.json.lease_until }) }}"
+      },
+      "position": [
+        350,
+        480
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "e658444c-47a9-4158-883f-3ab408cdb6f1",
+      "name": "Check Missing Submissions",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/jobs/execute/missing-reminder",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Claim Due Job').item.json.id, lease_until: $('Claim Due Job').item.json.lease_until }) }}"
+      },
+      "position": [
+        350,
+        660
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "70dfad24-f207-4df4-9e4f-c7b0a6aff890",
+      "name": "Check GPT Progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/jobs/execute/progress-check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Claim Due Job').item.json.id, lease_until: $('Claim Due Job').item.json.lease_until }) }}"
+      },
+      "position": [
+        350,
+        840
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "75a81eb4-3974-4f84-883a-6dd3fbbe3708",
+      "name": "Check New Submissions",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/jobs/execute/late-check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Claim Due Job').item.json.id, lease_until: $('Claim Due Job').item.json.lease_until }) }}"
+      },
+      "position": [
+        350,
+        1020
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "31df2b27-7d98-425e-b99b-c4b6ac4956d7",
+      "name": "Operation Succeeded?",
+      "type": "n8n-nodes-base.switch",
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.ok ? 0 : 1 }}"
+      },
+      "position": [
+        650,
+        650
+      ],
+      "typeVersion": 3.2
+    },
+    {
+      "id": "04d41595-a5d7-464a-b7c0-25a3539ad44c",
+      "name": "Record Job Failure and Retry Time",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/jobs/failure",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Claim Due Job').item.json.id, lease_until: $('Claim Due Job').item.json.lease_until }) }}"
+      },
+      "position": [
+        950,
+        900
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "id": "001cfa41-215c-4904-ac43-db96df9e9d27",
+      "name": "Notification Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * * *"
+            }
+          ]
+        }
+      },
+      "position": [
+        -660,
+        1400
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "id": "8cd4d125-1fc0-4c1a-9dbc-ab92cb5e3ac7",
+      "name": "Claim Pending Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/notifications/claim",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        }
+      },
+      "position": [
+        -420,
+        1400
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "id": "8ee96723-8476-47ac-8f77-ec2b85aaf479",
+      "name": "Only Pending Notification",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "return $input.all().filter(i => i.json.available === true);"
+      },
+      "position": [
+        -180,
+        1400
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "7d5e2f4e-53a4-4e45-b967-7b22a8bcee77",
+      "name": "Send LINE Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/notifications/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Claim Pending Notification').item.json.id, lease_until: $('Claim Pending Notification').item.json.lease_until }) }}"
+      },
+      "position": [
+        60,
+        1400
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "47304888-8bd7-4bb0-b38b-5e074f6231ff",
+      "name": "Notification Sent?",
+      "type": "n8n-nodes-base.switch",
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.ok ? 0 : 1 }}"
+      },
+      "position": [
+        350,
+        1400
+      ],
+      "typeVersion": 3.2
+    },
+    {
+      "id": "f56b8172-3882-4f77-9017-9bf0c2f8c982",
+      "name": "Defer Notification One Minute",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/notifications/defer",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 480000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Claim Pending Notification').item.json.id, lease_until: $('Claim Pending Notification').item.json.lease_until }) }}"
+      },
+      "position": [
+        650,
+        1550
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "id": "f0c66bd9-ceaf-4cc4-949c-84408b19b7dc",
+      "name": "Await Lease Recovery",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "return $input.all().map(() => ({json: {outcome: \"unknown\", recovery: \"The lease will expire; do not retry an operation whose result is unknown.\"}}));"
+      },
+      "position": [
+        950,
+        1650
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "2d7df227-9cd0-4c5a-a937-2908fc9a1a86",
+      "name": "Controller Readiness",
+      "type": "n8n-nodes-base.webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "line-meeting-controller-ready-v3",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "position": [
+        -660,
+        1900
+      ],
+      "typeVersion": 2,
+      "webhookId": "line-meeting-controller-ready-v3"
+    },
+    {
+      "id": "7f5a04b5-a032-46cf-a971-dcb8d7e0a430",
+      "name": "Read Core Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "GET",
+        "url": "http://linebot:8000/health",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "position": [
+        -420,
+        1900
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "id": "aacac91a-9e41-4d0d-8ec3-71476e9b76c2",
+      "name": "Return Controller Readiness",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({workflow_version: \"n8n-v3\", core: $json}) }}",
+        "options": {}
+      },
+      "position": [
+        -180,
+        1900
+      ],
+      "typeVersion": 1.4
+    },
+    {
+      "id": "affba1c7-dddd-4736-838d-c3ce46c249c7",
+      "name": "Workflow Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "parameters": {
+        "content": "## n8n 主導會議流程\n上方：接收、分派指令與舊版 Wait 相容路徑。\n中間：每 15 秒領取一個工作，依五種作業分流。\n下方：獨立領取通知、傳送、失敗延後一分鐘。\nPython 僅執行單項功能與保存交易／租約。\n正式切換：ORCHESTRATOR=n8n、INTERNAL_MEETING_JOBS=false。",
+        "width": 340,
+        "height": 300
+      },
+      "position": [
+        -1000,
+        700
+      ],
+      "typeVersion": 1
+    },
+    {
+      "id": "a9aca055-e713-4691-a4ac-dde0e14d2b5f",
+      "name": "Retry Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "parameters": {
+        "content": "## 重試\nAPI 明確回報失敗 → n8n 失敗分支 → 記錄下次重試時間。\n下次 Schedule 領取；首次＋三次重試。\nHTTP 中斷時結果未知，不立即重試，等租約到期再領取。\nLINE 為至少一次傳送，極端斷線仍可能重複通知。\n流程未發布時不會自動執行。",
+        "width": 430,
+        "height": 300
+      },
+      "position": [
+        950,
+        1150
+      ],
+      "typeVersion": 1
     }
   ],
   "connections": {
@@ -287,7 +820,7 @@
       "main": [
         [
           {
-            "node": "Prepare Meeting",
+            "node": "Process Group Command",
             "type": "main",
             "index": 0
           }
@@ -364,7 +897,7 @@
       "main": [
         [
           {
-            "node": "Run Due Meeting Jobs",
+            "node": "Claim Due Job",
             "type": "main",
             "index": 0
           }
@@ -376,6 +909,301 @@
         [
           {
             "node": "Wait Until Lead Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Group Command": {
+      "main": [
+        [
+          {
+            "node": "Command Handled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Command Handled?": {
+      "main": [
+        [
+          {
+            "node": "Only Nonempty Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Meeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Nonempty Reply": {
+      "main": [
+        [
+          {
+            "node": "Reply to Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Due Job": {
+      "main": [
+        [
+          {
+            "node": "Only Available Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Available Job": {
+      "main": [
+        [
+          {
+            "node": "Route Meeting Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Meeting Operation": {
+      "main": [
+        [
+          {
+            "node": "Record Job Failure and Retry Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Meeting Upload Link",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Upload Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Missing Submissions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check GPT Progress",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check New Submissions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Meeting Upload Link": {
+      "main": [
+        [
+          {
+            "node": "Operation Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Await Lease Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Upload Notification": {
+      "main": [
+        [
+          {
+            "node": "Operation Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Await Lease Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Missing Submissions": {
+      "main": [
+        [
+          {
+            "node": "Operation Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Await Lease Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check GPT Progress": {
+      "main": [
+        [
+          {
+            "node": "Operation Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Await Lease Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check New Submissions": {
+      "main": [
+        [
+          {
+            "node": "Operation Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Await Lease Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Operation Succeeded?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Record Job Failure and Retry Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notification Schedule": {
+      "main": [
+        [
+          {
+            "node": "Claim Pending Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Pending Notification": {
+      "main": [
+        [
+          {
+            "node": "Only Pending Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Pending Notification": {
+      "main": [
+        [
+          {
+            "node": "Send LINE Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send LINE Notification": {
+      "main": [
+        [
+          {
+            "node": "Notification Sent?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Await Lease Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notification Sent?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Defer Notification One Minute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Controller Readiness": {
+      "main": [
+        [
+          {
+            "node": "Read Core Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Core Health": {
+      "main": [
+        [
+          {
+            "node": "Return Controller Readiness",
             "type": "main",
             "index": 0
           }
@@ -393,10 +1221,10 @@
     "saveDataSuccessExecution": "all"
   },
   "active": false,
-  "versionId": "a8d20dd9-3ac6-45ea-8848-a67a3b793f30",
+  "versionId": "282e1a31-7a31-44f3-8392-ec121b308268",
   "meta": {
     "templateCredsSetupCompleted": true
   },
   "tags": [],
-  "id": "lineMeetingNasV2"
+  "id": "lineMeetingN8nV3"
 }

@@ -62,7 +62,7 @@ def test_synology_file_versions_ignore_reads_but_detect_writes():
 
 
 def test_browser_file_station_response_must_match_selected_folder():
-    folder = "/會議/TEST_MEETING_FOLDER"
+    folder = "/會議/翁 (linebot)"
     entry = {"name": "test.pdf", "path": f"{folder}/test.pdf", "isdir": False}
     elsewhere = {"name": "test.pdf", "path": "/會議/其他/test.pdf", "isdir": False}
     response = {"data": {"result": [{"data": {"files": [elsewhere]}}, {"data": {"files": [entry]}}]}}
