@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: n8n
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n8n -d n8n"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      GENERIC_TIMEZONE: Asia/Taipei
+      TZ: Asia/Taipei
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL:-http://localhost:5678}
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678}
+      CORE_API_KEY: ${CORE_API_KEY}
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+
+  linebot:
+    image: line-meeting-nas-uploader:2.0.0
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - n8n
+    env_file:
+      - .env
+    environment:
+      ORCHESTRATOR: n8n
+      N8N_INTAKE_URL: http://n8n:5678/webhook/line-meeting-intake
+      CORE_API_KEY: ${CORE_API_KEY}
+      DB_PATH: /app/data/meetings.db
+      BROWSER_PROFILE_PATH: /app/data/dsm-browser-profile
+      BROWSER_HEADLESS: "true"
+      BROWSER_CHANNEL: ""
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - linebot-data:/app/data
+      - linebot-work:/app/work
+    shm_size: "1gb"
+
+volumes:
+  linebot-data:
+  linebot-work:
+  n8n-data:
+  postgres-data:

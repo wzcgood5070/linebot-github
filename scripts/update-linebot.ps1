@@ -1,0 +1,96 @@
+﻿param([Parameter(Mandatory=$true)][string]$ProjectPath)
+$ErrorActionPreference = 'Stop'
+$project = (Resolve-Path -LiteralPath $ProjectPath).Path
+$source = Split-Path -Parent $PSScriptRoot
+$release = Join-Path $source 'work/linebot-release'
+$base = Join-Path $project 'compose.yaml'
+$overlay = Join-Path $release 'compose.release.yaml'
+$rollback = Join-Path $release 'compose.rollback.yaml'
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$newImage = "linebot-vnext:release-$stamp"
+$oldImage = "linebot-vnext:rollback-$stamp"
+
+function Invoke-Docker {
+    & docker @args
+    if ($LASTEXITCODE -ne 0) { throw "Docker command failed ($LASTEXITCODE): $($args[0])" }
+}
+
+function Wait-Linebot {
+    param([string]$ComposeOverlay)
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        $id = Invoke-Docker compose -f $base -f $ComposeOverlay ps -q linebot
+        if ($id) {
+            $health = Invoke-Docker inspect --format '{{.State.Health.Status}}' $id
+            if ($health -eq 'healthy') { return }
+            if ($health -eq 'unhealthy') { break }
+        }
+        Start-Sleep -Seconds 2
+    }
+    throw 'The LINE Bot container did not become healthy.'
+}
+
+Invoke-Docker version --format '{{.Server.Version}}'
+$existing = @(Invoke-Docker compose -f $base ps -q linebot)
+if ($existing.Count -ne 1) { throw 'Expected one running LINE Bot container. No deployment changes were made.' }
+$previous = Invoke-Docker inspect --format '{{.Image}}' $existing[0]
+New-Item -ItemType Directory -Path $release -Force | Out-Null
+
+Invoke-Docker build -t $newImage $source
+Invoke-Docker run --rm --entrypoint python $newImage -m pytest -q
+Invoke-Docker image tag $previous $oldImage
+
+$backupPath = "/tmp/linebot-before-$stamp.db"
+$localBackup = Join-Path $release "linebot-before-$stamp.db"
+@'
+import os
+import sqlite3
+import sys
+from contextlib import closing
+from pathlib import Path
+
+database = Path(os.environ['DB_PATH']).resolve()
+if not database.is_file():
+    raise SystemExit('The active database was not found.')
+with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as source:
+    with closing(sqlite3.connect(sys.argv[1])) as destination:
+        source.backup(destination)
+'@ | & docker exec -i $existing[0] python - $backupPath
+if ($LASTEXITCODE -ne 0) { throw 'Database backup failed. No deployment changes were made.' }
+Invoke-Docker cp "$($existing[0]):$backupPath" $localBackup
+
+@"
+services:
+  linebot:
+    image: $newImage
+    environment:
+      INTERNAL_MEETING_JOBS: 'true'
+      MEETING_SUBMISSION_CHECKS_ENABLED: 'false'
+"@ | Set-Content -LiteralPath $overlay -Encoding ascii
+@"
+services:
+  linebot:
+    image: $oldImage
+"@ | Set-Content -LiteralPath $rollback -Encoding ascii
+
+Invoke-Docker compose -f $base -f $overlay config --quiet
+try {
+    Invoke-Docker compose -f $base -f $overlay up -d --no-deps --no-build --force-recreate linebot
+    Wait-Linebot $overlay
+    $current = Invoke-Docker compose -f $base -f $overlay ps -q linebot
+    @'
+import json
+import urllib.request
+
+with urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5) as response:
+    state = json.load(response)
+assert state['internal_meeting_jobs'] and not state['submission_checks_enabled']
+print('RELEASE STATUS: OK')
+'@ | & docker exec -i $current python -
+    if ($LASTEXITCODE -ne 0) { throw 'The LINE Bot release settings did not match.' }
+} catch {
+    Write-Warning 'The release failed its health check. Restoring the previous image.'
+    Invoke-Docker compose -f $base -f $rollback up -d --no-deps --no-build --force-recreate linebot
+    Wait-Linebot $rollback
+    Write-Output 'RELEASE STATUS: ROLLED BACK'
+    throw
+}

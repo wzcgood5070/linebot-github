@@ -1,0 +1,402 @@
+{
+  "name": "LINE Meeting NAS Orchestration v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "line-meeting-intake",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "b5195d4c-e832-4f98-85a1-7b63ad97b202",
+      "name": "LINE Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        -120
+      ],
+      "webhookId": "line-meeting-intake"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "unified-meeting-intake",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "1b6e4c44-c3b5-4f80-9c14-1162cffdc4fe",
+      "name": "Calendar Form Email Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        100
+      ],
+      "webhookId": "unified-meeting-intake"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nfor (const key of ['event_id', 'target_id', 'text']) {\n  if (!body[key]) throw new Error(`Missing required field: ${key}`);\n}\nreturn [{ json: {\n  event_id: String(body.event_id),\n  target_id: String(body.target_id),\n  target_type: String(body.target_type ?? body.source ?? 'external'),\n  text: String(body.text),\n  reply_token: String(body.reply_token ?? ''),\n  received_at: body.received_at ?? new Date().toISOString(),\n  source: String(body.source ?? 'external')\n} }];"
+      },
+      "id": "422402ff-9b21-4e39-8555-f59e4ded3304",
+      "name": "Normalize Intake",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/prepare",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event_id: $json.event_id, target_id: $json.target_id, target_type: $json.target_type, text: $json.text, received_at: $json.received_at }) }}",
+        "options": {}
+      },
+      "id": "9da47996-aa56-4591-ae9d-19c3059dc773",
+      "name": "Prepare Meeting",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.filter(item => item.json.accepted === true);"
+      },
+      "id": "120148b1-288c-4ed7-a937-b15f0049ed9d",
+      "name": "Only Accepted Meetings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/line/reply",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ reply_token: $('Normalize Intake').item.json.reply_token, text: $('Prepare Meeting').item.json.identifier ? '已登記' + $('Prepare Meeting').item.json.title + '：' + DateTime.fromISO($('Prepare Meeting').item.json.starts_at).toFormat('yyyy/MM/dd HH:mm') + '。會議編號：' + $('Prepare Meeting').item.json.identifier + '。' : '已登記：' + DateTime.fromISO($('Prepare Meeting').item.json.starts_at).toFormat('yyyy/MM/dd HH:mm') }) }}",
+        "options": {}
+      },
+      "id": "b479a16c-7be2-4248-a303-c572452fe150",
+      "name": "Acknowledge Registration",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        60,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "specificTime",
+        "dateTime": "={{ $('Prepare Meeting').item.json.run_at }}"
+      },
+      "id": "f645317f-8a49-4090-b8e4-05b781da18e1",
+      "name": "Wait Until Lead Time",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        300,
+        0
+      ],
+      "webhookId": "wait-meeting-lead-time"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ `http://linebot:8000/api/v1/meetings/${$('Prepare Meeting').item.json.meeting_id}/create-file-request?expected_start=${encodeURIComponent($('Prepare Meeting').item.json.starts_at)}` }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1d9e0bd8-d36a-4d94-94db-42bef58f351f",
+      "name": "Create NAS File Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().filter(item => !item.json.skipped);"
+      },
+      "id": "88adc66e-2cb3-414a-a3f2-73adf99232ad",
+      "name": "Only Current Schedule",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/line/push",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ target_id: $json.target_id, text: `會議將在 ${$('Prepare Meeting').item.json.lead_minutes} 分鐘後開始\\n會議：${$json.title}\\n時間：${DateTime.fromISO($json.starts_at).toFormat('yyyy/MM/dd HH:mm')}\\n資料夾：${$json.folder_name}\\n資料上傳網址：${$json.upload_url}` }) }}",
+        "options": {}
+      },
+      "id": "c44ec4ce-c0e3-445d-b220-ea79f48b57f5",
+      "name": "Notify Target",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * * *"
+            }
+          ]
+        }
+      },
+      "id": "8f2ccb06-09e1-426c-95f7-580509479a7e",
+      "name": "Meeting Job Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -660,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://linebot:8000/api/v1/meetings/jobs/run-due",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Core-API-Key",
+              "value": "={{ $env.CORE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "23acaf52-41d6-4781-80cf-53faab7145a9",
+      "name": "Run Due Meeting Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $('Prepare Meeting').first().json.schedule ? [] : $input.all();"
+      },
+      "id": "b6999faa-bfe4-45aa-a6bb-de1124704d3b",
+      "name": "Only Legacy Schedule",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "LINE Intake": {
+      "main": [
+        [
+          {
+            "node": "Normalize Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendar Form Email Intake": {
+      "main": [
+        [
+          {
+            "node": "Normalize Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Intake": {
+      "main": [
+        [
+          {
+            "node": "Prepare Meeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Meeting": {
+      "main": [
+        [
+          {
+            "node": "Only Accepted Meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Accepted Meetings": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Registration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge Registration": {
+      "main": [
+        [
+          {
+            "node": "Only Legacy Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Until Lead Time": {
+      "main": [
+        [
+          {
+            "node": "Create NAS File Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create NAS File Request": {
+      "main": [
+        [
+          {
+            "node": "Only Current Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Current Schedule": {
+      "main": [
+        [
+          {
+            "node": "Notify Target",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meeting Job Schedule": {
+      "main": [
+        [
+          {
+            "node": "Run Due Meeting Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Legacy Schedule": {
+      "main": [
+        [
+          {
+            "node": "Wait Until Lead Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Taipei",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "active": false,
+  "versionId": "a8d20dd9-3ac6-45ea-8848-a67a3b793f30",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": [],
+  "id": "lineMeetingNasV2"
+}
